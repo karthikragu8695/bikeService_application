@@ -24,14 +24,24 @@ class _FuelScreenState extends State<FuelScreen> {
 
   static const primary = Color(0xFFFF5A1F);
 
-  double get fuelLevelPercent {
-    if (fuelList.isEmpty) return 0.0;
+ double get fuelLevelPercent {
+  if (fuelList.isEmpty) return 0.0;
 
-    final lastLiter = (fuelList.first['liters'] as num?)?.toDouble() ?? 0;
-    const tankCapacity = 13.0;
+  double totalLiters = 0;
 
-    return (lastLiter / tankCapacity).clamp(0.0, 1.0);
+  for (final fuel in fuelList) {
+    totalLiters +=
+        (fuel['liters'] as num?)?.toDouble() ?? 0;
   }
+
+  const tankCapacity = 13.0;
+
+  if (totalLiters > tankCapacity) {
+    totalLiters = tankCapacity;
+  }
+
+  return totalLiters / tankCapacity;
+}
 
   @override
   void initState() {
@@ -40,34 +50,37 @@ class _FuelScreenState extends State<FuelScreen> {
   }
 
   Future<void> loadFuelHistory() async {
-    try {
-      final user = supabase.auth.currentUser;
+  try {
+    final user = supabase.auth.currentUser;
 
-      if (user == null) {
-        setState(() => loading = false);
-        return;
-      }
-
-      final data = await supabase
-          .from('fuel_entries')
-          .select()
-          .eq('', user.id)
-          .order('fuel_date', ascending: false);
-
-      setState(() {
-        fuelList = data;
-        loading = false;
-      });
-    } catch (e) {
+    if (user == null) {
+      if (!mounted) return;
       setState(() => loading = false);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e")),
-        );
-      }
+      return;
     }
+
+    final data = await supabase
+        .from('fuel_entries')
+        .select()
+        .eq('', user.id)
+        .order('fuel_date', ascending: false);
+
+    if (!mounted) return;
+
+    setState(() {
+      fuelList = data;
+      loading = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+
+    setState(() => loading = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error: $e")),
+    );
   }
+}
 
   String formatDate(String date) {
     final d = DateTime.tryParse(date);
@@ -332,7 +345,7 @@ class _FuelScreenState extends State<FuelScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: fuelList.length > 5 ? 5 : fuelList.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final fuel = fuelList[index];
 

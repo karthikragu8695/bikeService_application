@@ -42,8 +42,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final supabase = Supabase.instance.client;
-
+  int serviceDueKm = 0;
   int selectedIndex = 0;
+  List<dynamic> recentServices = [];
+  double mileage = 0;
 
   String riderName = "Rider";
   Map<String, dynamic>? bikeData;
@@ -53,8 +55,95 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    getRecentServices();
+    getServiceDue();
     getUserData();
     getBike();
+    getMileage();
+  }
+
+  Future<void> getMileage() async {
+    try {
+      final User = supabase.auth.currentUser;
+      if (User == null) return;
+
+      final bike = await supabase
+          .from('bikes')
+          .select('id')
+          .eq('user_id', User.id)
+          .maybeSingle();
+      if (bike == null) return;
+      final fuel = await supabase
+          .from('fuel_entries')
+          .select('odometer,liters')
+          .eq('bike_id', bike['id'])
+          .order('fuel_date', ascending: false)
+          .limit(2);
+      if (fuel.length < 2) return;
+      final latest = fuel[0];
+      final previous = fuel[1];
+      final distance =
+          (latest['odometer'] as num) - (previous['odometer'] as num);
+      final liters = (latest['liters'] as num).toDouble();
+      if (liters <= 0) {
+        setState(() {
+          mileage = distance / liters;
+        });
+      }
+    } catch (e) {
+      debugPrint('Mileage error: $e');
+    }
+  }
+
+  Future<void> getServiceDue() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final bike = await supabase
+        .from('bikes')
+        .select('id, current_km')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (bike == null) return;
+
+    final service = await supabase
+        .from('services')
+        .select('next_service_km')
+        .eq('bike_id', bike['id'])
+        .order('service_date', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (!mounted) return;
+    if (service == null) return;
+
+    final currentKm = bike['current_km'] ?? 0;
+    final nextKm = service['next_service_km'] ?? 0;
+
+    setState(() {
+      serviceDueKm = nextKm - currentKm;
+      if (serviceDueKm < 0) serviceDueKm = 0;
+    });
+  }
+
+  Future<void> getRecentServices() async {
+    try {
+      final User = supabase.auth.currentUser;
+      if (User == null) return;
+      final data = await supabase
+          .from('services')
+          .select()
+          .eq('user_id', User.id)
+          .order('service_date', ascending: false)
+          .limit(3);
+      if (mounted) {
+        setState(() {
+          recentServices = data;
+        });
+      }
+    } catch (e) {
+      debugPrint("Recet service Load error:$e");
+    }
   }
 
   Future<void> getUserData() async {
@@ -103,31 +192,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> getFuelEntries() async {
     try {
-      if (bikeData == null) {
-        debugPrint("Bike data null");
-        return;
-      }
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
 
-      final latestFuel = await supabase
-          .from('fuel_entries')
-          .select()
-          .eq('bike_id', bikeData!['id'])
-          .order('fuel_date', ascending: false)
-          .limit(1)
+      final bike = await supabase
+          .from('bikes')
+          .select('id')
+          .eq('user_id', user.id)
           .maybeSingle();
 
-      debugPrint("Latest Fuel: $latestFuel");
+      if (bike == null) return;
 
-      final liters = (latestFuel?['liters'] as num?)?.toDouble() ?? 0.0;
+      final fuelData = await supabase
+          .from('fuel_entries')
+          .select('liters')
+          .eq('bike_id', bike['id']);
+
+      double totalLiters = 0;
+
+      for (final item in fuelData) {
+        totalLiters += (item['liters'] as num).toDouble();
+      }
+
       const tankCapacity = 13.0;
 
-      final percent = ((liters / tankCapacity) * 100).clamp(0.0, 100.0);
-
-      if (mounted) {
-        setState(() {
-          fuelLevelPercent = percent;
-        });
-      }
+      setState(() {
+        fuelLevelPercent = ((totalLiters / tankCapacity) * 100)
+            .clamp(0, 100)
+            .toDouble();
+      });
     } catch (e) {
       debugPrint("Fuel Entries Load Error: $e");
     }
@@ -228,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Good Morning,",
+                        "Hello,",
                         style: TextStyle(color: Colors.white70),
                       ),
                       Text(
@@ -310,15 +403,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.cyan,
                     icon: Icons.local_gas_station,
                   ),
-                  const DashboardTile(
+                  DashboardTile(
                     title: "Service Due",
-                    value: "1200 km",
+                    value: "$serviceDueKm km",
                     color: Colors.orange,
                     icon: Icons.access_time,
                   ),
-                  const DashboardTile(
+                  DashboardTile(
                     title: "Mileage",
-                    value: "45.2",
+                    value: "${mileage.toStringAsFixed(1)} km/L",
                     color: Colors.deepOrange,
                     icon: Icons.speed,
                   ),
@@ -366,8 +459,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       "Add Service",
                       Colors.blue,
                       Icons.build,
-                      () {
-                        showAddServiceDialog(context);
+                      () async {
+                        final result = await showAddServiceDialog(context);
+
+                        if (result == true) {
+                          await getRecentServices();
+                        }
                       },
                     ),
                   ),
@@ -405,33 +502,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: const Color(0xFF111827),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Column(
-                  children: [
-                    serviceTile(
-                      Icons.oil_barrel,
-                      Colors.green,
-                      "Oil Change",
-                      "12 May 2024",
-                      "₹ 800",
-                    ),
-                    const SizedBox(height: 12),
-                    serviceTile(
-                      Icons.build,
-                      Colors.green,
-                      "Chain Service",
-                      "10 Mar 2024",
-                      "₹ 300",
-                    ),
-                    const SizedBox(height: 12),
-                    serviceTile(
-                      Icons.settings,
-                      Colors.orange,
-                      "Next Service",
-                      "1200 km remaining",
-                      "₹ 600",
-                    ),
-                  ],
-                ),
+                child: recentServices.isEmpty
+                    ? const Text(
+                        "No services added yet",
+                        style: TextStyle(color: Colors.white54),
+                      )
+                    : Column(
+                        children: recentServices.map((service) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: serviceTile(
+                              Icons.build,
+                              Colors.orange,
+                              service['service_type'] ?? "Service",
+                              service['service_date'] ?? "",
+                              "₹ ${service['cost'] ?? 0}",
+                            ),
+                          );
+                        }).toList(),
+                      ),
               ),
             ],
           ),
