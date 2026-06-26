@@ -1,3 +1,4 @@
+import 'package:bikeservice/screens/Notification.dart';
 import 'package:bikeservice/screens/ProfileScreen.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
 import 'package:bikeservice/screens/fuel.dart';
@@ -10,101 +11,166 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  static Widget actionButton(
-    String title,
-    Color color,
-    IconData icon,
-    VoidCallback onPressed,
-  ) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        height: 55,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(title, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   final supabase = Supabase.instance.client;
-  int serviceDueKm = 0;
+
+  static const primary = Color(0xFFFF5A1F);
+
   int selectedIndex = 0;
-  List<dynamic> recentServices = [];
-  double mileage = 0;
+  bool loading = true;
 
   String riderName = "Rider";
   Map<String, dynamic>? bikeData;
 
   double fuelLevelPercent = 0;
+  double mileage = 0;
+  double monthlyFuelCost = 0;
+  double totalDistance = 0;
+
+  int serviceDueKm = 0;
+  int tripsCount = 0;
+
+  List<dynamic> recentServices = [];
 
   @override
   void initState() {
     super.initState();
-    getRecentServices();
-    getServiceDue();
-    getUserData();
-    getBike();
-    getMileage();
+    loadHomeData();
   }
 
-  Future<void> getMileage() async {
+  Future<void> loadHomeData() async {
     try {
-      final User = supabase.auth.currentUser;
-      if (User == null) return;
+      if (mounted) setState(() => loading = true);
 
-      final bike = await supabase
-          .from('bikes')
-          .select('id')
-          .eq('user_id', User.id)
-          .maybeSingle();
-      if (bike == null) return;
-      final fuel = await supabase
-          .from('fuel_entries')
-          .select('odometer,liters')
-          .eq('bike_id', bike['id'])
-          .order('fuel_date', ascending: false)
-          .limit(2);
-      if (fuel.length < 2) return;
-      final latest = fuel[0];
-      final previous = fuel[1];
-      final distance =
-          (latest['odometer'] as num) - (previous['odometer'] as num);
-      final liters = (latest['liters'] as num).toDouble();
-      if (liters <= 0) {
-        setState(() {
-          mileage = distance / liters;
-        });
-      }
+      await getUserData();
+      await getBike();
+      await getFuelSummary();
+      await getMileage();
+      await getServiceDue();
+      await getTripsSummary();
+      await getRecentServices();
+
+      if (mounted) setState(() => loading = false);
     } catch (e) {
-      debugPrint('Mileage error: $e');
+      if (mounted) setState(() => loading = false);
+      debugPrint("Home Load Error: $e");
     }
   }
 
-  Future<void> getServiceDue() async {
+  Future<Map<String, dynamic>?> getUserBike() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return null;
+
+    return await supabase
+        .from('bikes')
+        .select()
+        .eq('user_id', user.id)
+        .maybeSingle();
+  }
+
+  Future<void> getUserData() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final bike = await supabase
-        .from('bikes')
-        .select('id, current_km')
-        .eq('user_id', user.id)
+    final data = await supabase
+        .from('users')
+        .select()
+        .eq('id', user.id)
         .maybeSingle();
 
+    if (!mounted) return;
+
+    setState(() {
+      riderName = data?['name'] ?? "Rider";
+    });
+  }
+
+  Future<void> getBike() async {
+    final bike = await getUserBike();
+
+    if (!mounted) return;
+
+    setState(() {
+      bikeData = bike;
+    });
+  }
+
+  Future<void> getFuelSummary() async {
+    final bike = bikeData ?? await getUserBike();
+    if (bike == null) return;
+
+    final fuelList = await supabase
+        .from('fuel_entries')
+        .select('liters, amount, fuel_date')
+        .eq('bike_id', bike['id'])
+        .order('fuel_date', ascending: false);
+
+    const tankCapacity = 13.0;
+
+    double latestLiters = 0;
+    double monthCost = 0;
+    final now = DateTime.now();
+
+    if (fuelList.isNotEmpty) {
+      latestLiters = (fuelList.first['liters'] as num?)?.toDouble() ?? 0;
+    }
+
+    for (final fuel in fuelList) {
+      final date = DateTime.tryParse(fuel['fuel_date']?.toString() ?? "");
+      final amount = (fuel['amount'] as num?)?.toDouble() ?? 0;
+
+      if (date != null && date.month == now.month && date.year == now.year) {
+        monthCost += amount;
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      fuelLevelPercent = ((latestLiters / tankCapacity) * 100)
+          .clamp(0, 100)
+          .toDouble();
+      monthlyFuelCost = monthCost;
+    });
+  }
+
+  Future<void> getMileage() async {
+    final bike = bikeData ?? await getUserBike();
+    if (bike == null) return;
+
+    final fuelList = await supabase
+        .from('fuel_entries')
+        .select('odometer, liters')
+        .eq('bike_id', bike['id'])
+        .order('fuel_date', ascending: false)
+        .limit(2);
+
+    if (fuelList.length < 2) return;
+
+    final latest = fuelList[0];
+    final previous = fuelList[1];
+
+    final latestOdo = (latest['odometer'] as num?)?.toDouble() ?? 0;
+    final previousOdo = (previous['odometer'] as num?)?.toDouble() ?? 0;
+    final liters = (latest['liters'] as num?)?.toDouble() ?? 0;
+
+    final distance = latestOdo - previousOdo;
+
+    if (distance <= 0 || liters <= 0) return;
+
+    if (!mounted) return;
+
+    setState(() {
+      mileage = distance / liters;
+    });
+  }
+
+  Future<void> getServiceDue() async {
+    final bike = bikeData ?? await getUserBike();
     if (bike == null) return;
 
     final service = await supabase
@@ -114,116 +180,74 @@ class _HomeScreenState extends State<HomeScreen> {
         .order('service_date', ascending: false)
         .limit(1)
         .maybeSingle();
-    if (!mounted) return;
-    if (service == null) return;
 
-    final currentKm = bike['current_km'] ?? 0;
-    final nextKm = service['next_service_km'] ?? 0;
+    final currentKm = (bike['current_km'] as num?)?.toInt() ?? 0;
+    final nextKm = (service?['next_service_km'] as num?)?.toInt() ?? 0;
+
+    int dueKm = 0;
+
+    if (nextKm > currentKm) {
+      dueKm = nextKm - currentKm;
+    }
+
+    if (!mounted) return;
 
     setState(() {
-      serviceDueKm = nextKm - currentKm;
-      if (serviceDueKm < 0) serviceDueKm = 0;
+      serviceDueKm = dueKm;
+    });
+  }
+
+  Future<void> getTripsSummary() async {
+    final bike = bikeData ?? await getUserBike();
+    if (bike == null) return;
+
+    final trips = await supabase
+        .from('trips')
+        .select('distance_km')
+        .eq('bike_id', bike['id']);
+
+    double distance = 0;
+
+    for (final trip in trips) {
+      distance += (trip['distance_km'] as num?)?.toDouble() ?? 0;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      tripsCount = trips.length;
+      totalDistance = distance;
     });
   }
 
   Future<void> getRecentServices() async {
-    try {
-      final User = supabase.auth.currentUser;
-      if (User == null) return;
-      final data = await supabase
-          .from('services')
-          .select()
-          .eq('user_id', User.id)
-          .order('service_date', ascending: false)
-          .limit(3);
-      if (mounted) {
-        setState(() {
-          recentServices = data;
-        });
-      }
-    } catch (e) {
-      debugPrint("Recet service Load error:$e");
-    }
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final data = await supabase
+        .from('services')
+        .select()
+        .eq('user_id', user.id)
+        .order('service_date', ascending: false)
+        .limit(3);
+
+    if (!mounted) return;
+
+    setState(() {
+      recentServices = data;
+    });
   }
 
-  Future<void> getUserData() async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final data = await supabase
-          .from('users')
-          .select()
-          .eq('id', user.id)
-          .maybeSingle();
-
-      if (data != null && mounted) {
-        setState(() {
-          riderName = data['name'] ?? "Rider";
-        });
-      }
-    } catch (e) {
-      debugPrint("User Load Error: $e");
-    }
+  Future<void> refreshAfterFuelAdded() async {
+    await getBike();
+    await getFuelSummary();
+    await getMileage();
+    await getServiceDue();
   }
 
-  Future<void> getBike() async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final data = await supabase
-          .from('bikes')
-          .select()
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (data != null && mounted) {
-        setState(() {
-          bikeData = data;
-        });
-
-        await getFuelEntries();
-      }
-    } catch (e) {
-      debugPrint("Bike Load Error: $e");
-    }
-  }
-
-  Future<void> getFuelEntries() async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final bike = await supabase
-          .from('bikes')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (bike == null) return;
-
-      final fuelData = await supabase
-          .from('fuel_entries')
-          .select('liters')
-          .eq('bike_id', bike['id']);
-
-      double totalLiters = 0;
-
-      for (final item in fuelData) {
-        totalLiters += (item['liters'] as num).toDouble();
-      }
-
-      const tankCapacity = 13.0;
-
-      setState(() {
-        fuelLevelPercent = ((totalLiters / tankCapacity) * 100)
-            .clamp(0, 100)
-            .toDouble();
-      });
-    } catch (e) {
-      debugPrint("Fuel Entries Load Error: $e");
-    }
+  Future<void> refreshAfterServiceAdded() async {
+    await getRecentServices();
+    await getServiceDue();
   }
 
   void changeScreen(int index) {
@@ -261,34 +285,30 @@ class _HomeScreenState extends State<HomeScreen> {
     final String bikeImageUrl = bikeData?['image_url'] ?? '';
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(18),
       child: bikeImageUrl.isNotEmpty
           ? Image.network(
               bikeImageUrl,
-              width: 100,
-              height: 70,
+              width: 105,
+              height: 75,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) {
-                return bikeAssetImage();
-              },
+              errorBuilder: (_, _, _) => bikeAssetImage(),
             )
           : bikeAssetImage(),
     );
   }
 
   Widget bikeAssetImage() {
-    return Image.asset(
-      "assets/images/bike.png",
-      width: 100,
-      height: 100,
-      fit: BoxFit.cover,
+    return Container(
+      width: 105,
+      height: 75,
+      color: Colors.black26,
+      child: const Icon(Icons.motorcycle, color: Colors.white, size: 38),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    const primary = Color(0xFFFF5A1F);
-
     return Scaffold(
       backgroundColor: const Color(0xFF070B14),
       bottomNavigationBar: BottomNavigationBar(
@@ -309,254 +329,211 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
         ],
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ListView(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Hello,",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      Text(
-                        "$riderName 👋",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Icon(Icons.notifications_none, color: Colors.white),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111827),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
+      body: loading
+          ? const Center(child: CircularProgressIndicator(color: primary))
+          : SafeArea(
+              child: RefreshIndicator(
+                onRefresh: loadHomeData,
+                color: primary,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    bikeImageWidget(),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            bikeData?['bike_name'] ?? "No Bike Added",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            bikeData?['registration_no'] ?? "Add bike details",
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        "Active",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
+                    header(),
+                    const SizedBox(height: 18),
+                    bikeHeroCard(),
+                    const SizedBox(height: 18),
+                    analyticsGrid(),
+                    const SizedBox(height: 18),
+                    fuelGaugeCard(),
+                    const SizedBox(height: 18),
+                    quickActions(),
+                    const SizedBox(height: 18),
+                    bikeHealthCard(),
+                    const SizedBox(height: 18),
+                    recentActivity(),
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
+            ),
+    );
+  }
 
-              const SizedBox(height: 20),
-
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.4,
-                children: [
-                  DashboardTile(
-                    title: "Fuel Level",
-                    value: "${fuelLevelPercent.toStringAsFixed(0)}%",
-                    color: Colors.cyan,
-                    icon: Icons.local_gas_station,
-                  ),
-                  DashboardTile(
-                    title: "Service Due",
-                    value: "$serviceDueKm km",
-                    color: Colors.orange,
-                    icon: Icons.access_time,
-                  ),
-                  DashboardTile(
-                    title: "Mileage",
-                    value: "${mileage.toStringAsFixed(1)} km/L",
-                    color: Colors.deepOrange,
-                    icon: Icons.speed,
-                  ),
-                  const DashboardTile(
-                    title: "Trips",
-                    value: "12",
-                    color: Colors.lightBlue,
-                    icon: Icons.route,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
+  Widget header() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               const Text(
-                "Quick Actions",
-                style: TextStyle(
+                "Welcome Back,",
+                style: TextStyle(color: Colors.white54),
+              ),
+              Text(
+                "$riderName 👋",
+                style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 18,
+                  fontSize: 29,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: HomeScreen.actionButton(
-                      "Add Fuel",
-                      primary,
-                      Icons.local_gas_station,
-                      () async {
-                        final result = await showAddFuelDialog(context);
-
-                        if (result == true) {
-                          await getBike();
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: HomeScreen.actionButton(
-                      "Add Service",
-                      Colors.blue,
-                      Icons.build,
-                      () async {
-                        final result = await showAddServiceDialog(context);
-
-                        if (result == true) {
-                          await getRecentServices();
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              Row(
-                children: [
-                  const Text(
-                    "Recent Activity",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      "See All",
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 15),
-
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111827),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: recentServices.isEmpty
-                    ? const Text(
-                        "No services added yet",
-                        style: TextStyle(color: Colors.white54),
-                      )
-                    : Column(
-                        children: recentServices.map((service) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: serviceTile(
-                              Icons.build,
-                              Colors.orange,
-                              service['service_type'] ?? "Service",
-                              service['service_date'] ?? "",
-                              "₹ ${service['cost'] ?? 0}",
-                            ),
-                          );
-                        }).toList(),
-                      ),
               ),
             ],
           ),
         ),
+        Stack(
+          children: [
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NotificationScreen()),
+                );
+              },
+              child: Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white),
+                ),
+                child: const Icon(
+                  Icons.notifications_none,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Container(
+                height: 18,
+                width: 18,
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Text('2',style: TextStyle(color: Colors.white,fontSize: 10,fontWeight: FontWeight.bold),),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget bikeHeroCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [primary.withOpacity(.95), const Color(0xFF7C2D12)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Row(
+        children: [
+          bikeImageWidget(),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("My Bike", style: TextStyle(color: Colors.white70)),
+                const SizedBox(height: 5),
+                Text(
+                  bikeData?['bike_name'] ?? "No Bike Added",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  bikeData?['registration_no'] ?? "Add bike details",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text("Active", style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
-}
 
-class DashboardTile extends StatelessWidget {
-  final String title;
-  final String value;
-  final Color color;
-  final IconData icon;
+  Widget analyticsGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.15,
+      children: [
+        dashboardTile(
+          "Fuel Cost",
+          "₹ ${monthlyFuelCost.toStringAsFixed(0)}",
+          Icons.currency_rupee,
+          Colors.green,
+          "This Month",
+        ),
+        dashboardTile(
+          "Mileage",
+          "${mileage.toStringAsFixed(1)} km/L",
+          Icons.speed,
+          Colors.cyan,
+          "Latest",
+        ),
+        dashboardTile(
+          "Trips",
+          "$tripsCount",
+          Icons.route,
+          Colors.lightBlue,
+          "${totalDistance.toStringAsFixed(1)} km",
+        ),
+        dashboardTile(
+          "Service Due",
+          serviceDueKm == 0 ? "--" : "$serviceDueKm km",
+          Icons.build,
+          Colors.orange,
+          "Remaining",
+        ),
+      ],
+    );
+  }
 
-  const DashboardTile({
-    super.key,
-    required this.title,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget dashboardTile(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    String subtitle,
+  ) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white10),
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: color),
-          const SizedBox(height: 8),
+          const Spacer(),
           Text(
             value,
             style: const TextStyle(
@@ -565,9 +542,274 @@ class DashboardTile extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 3),
           Text(title, style: const TextStyle(color: Colors.white54)),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget fuelGaugeCard() {
+    final value = fuelLevelPercent / 100;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            height: 105,
+            width: 105,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  height: 105,
+                  width: 105,
+                  child: CircularProgressIndicator(
+                    value: value,
+                    strokeWidth: 11,
+                    backgroundColor: Colors.white12,
+                    valueColor: const AlwaysStoppedAnimation(primary),
+                  ),
+                ),
+                Text(
+                  "${fuelLevelPercent.toStringAsFixed(0)}%",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Fuel Level",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Based on your latest fuel entry",
+                  style: TextStyle(color: Colors.white54),
+                ),
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  value: value,
+                  minHeight: 7,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation(primary),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget quickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Quick Actions",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 19,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: actionButton(
+                "Add Fuel",
+                Icons.local_gas_station,
+                primary,
+                () async {
+                  final result = await showAddFuelDialog(context);
+                  if (result == true) {
+                    await refreshAfterFuelAdded();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: actionButton(
+                "Add Service",
+                Icons.build,
+                Colors.blue,
+                () async {
+                  final result = await showAddServiceDialog(context);
+                  if (result == true) {
+                    await refreshAfterServiceAdded();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget actionButton(
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed,
+  ) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        height: 58,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(17),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(title, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget bikeHealthCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Bike Health",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 15),
+          healthItem("Engine", .92, Colors.green),
+          healthItem("Battery", .85, Colors.cyan),
+          healthItem("Brake Pad", .70, Colors.orange),
+          healthItem("Tyre", .78, Colors.lightBlue),
+        ],
+      ),
+    );
+  }
+
+  Widget healthItem(String title, double value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 75,
+            child: Text(title, style: const TextStyle(color: Colors.white54)),
+          ),
+          Expanded(
+            child: LinearProgressIndicator(
+              value: value,
+              minHeight: 7,
+              backgroundColor: Colors.white12,
+              valueColor: AlwaysStoppedAnimation(color),
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            "${(value * 100).toStringAsFixed(0)}%",
+            style: const TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget recentActivity() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              "Recent Service",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => changeScreen(2),
+              child: const Text(
+                "See All",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: recentServices.isEmpty
+              ? const Text(
+                  "No services added yet",
+                  style: TextStyle(color: Colors.white54),
+                )
+              : Column(
+                  children: recentServices.map((service) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: serviceTile(
+                        Icons.build,
+                        Colors.orange,
+                        service['service_type'] ?? "Service",
+                        service['service_date'] ?? "",
+                        "₹ ${service['cost'] ?? 0}",
+                      ),
+                    );
+                  }).toList(),
+                ),
+        ),
+      ],
     );
   }
 }
@@ -580,7 +822,7 @@ Widget serviceTile(
   String amount,
 ) {
   return Container(
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: const Color(0xFF0F172A),
       borderRadius: BorderRadius.circular(16),
