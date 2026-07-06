@@ -1,12 +1,18 @@
+import 'package:bikeservice/screens/AboutUsScreen.dart';
+import 'package:bikeservice/screens/HelpSupportScreen%20.dart';
+import 'package:bikeservice/screens/Notification.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
 import 'package:bikeservice/screens/fuel.dart';
 import 'package:bikeservice/screens/home.dart';
 import 'package:bikeservice/screens/login.dart';
 import 'package:bikeservice/screens/service.dart';
+import 'package:bikeservice/screens/shimmer/ProfileShimmer.dart';
+import 'package:bikeservice/screens/theme_provider.dart';
 import 'package:bikeservice/screens/userProfile.dart';
 import 'package:bikeservice/widget/bikeDetail.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -211,7 +217,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const ProfileShimmer()
           : RefreshIndicator(
               onRefresh: loadProfileData,
               color: primary,
@@ -238,14 +244,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         await loadProfileData();
                       }
                     }),
-                    profileTile(
-                      Icons.notifications_none,
-                      "Notifications",
-                      () {},
-                    ),
+                    profileTile(Icons.notifications_none, "Notifications", () {
+                      setState(() {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => const NotificationScreen(),
+                          ),
+                        );
+                      });
+                    }),
                     themeTile(),
-                    profileTile(Icons.help_outline, "Help & Support", () {}),
-                    profileTile(Icons.info_outline, "About Us", () {}),
+                    profileTile(Icons.help_outline, "Help & Support", () {
+                      setState(() {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => const HelpSupportScreen(),
+                          ),
+                        );
+                      });
+                    }),
+                    profileTile(Icons.info_outline, "About Us", () {
+                      setState(() {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => const AboutUsScreen(),
+                          ),
+                        );
+                      });
+                    }),
                     const SizedBox(height: 20),
                     logoutButton(),
                     const SizedBox(height: 30),
@@ -262,10 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            primary.withOpacity(.95),
-            const Color(0xFF7C2D12),
-          ],
+          colors: [primary.withOpacity(.95), const Color(0xFF7C2D12)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -276,8 +302,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           CircleAvatar(
             radius: 42,
             backgroundColor: Colors.white24,
-            backgroundImage:
-                profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
+            backgroundImage: profileImage.isNotEmpty
+                ? NetworkImage(profileImage)
+                : null,
             child: profileImage.isEmpty
                 ? const Icon(Icons.person, color: Colors.white, size: 42)
                 : null,
@@ -462,11 +489,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           Switch(
             activeThumbColor: primary,
-            value: darkMode,
+            value: Provider.of<ThemeProvider>(context).isDark,
             onChanged: (value) {
-              setState(() {
-                darkMode = value;
-              });
+              Provider.of<ThemeProvider>(
+                context,
+                listen: false,
+              ).toggleTheme(value);
             },
           ),
         ],
@@ -510,10 +538,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           context: context,
           builder: (_) => AlertDialog(
             backgroundColor: const Color(0xFF111827),
-            title: const Text(
-              "Logout",
-              style: TextStyle(color: Colors.white),
-            ),
+            title: const Text("Logout", style: TextStyle(color: Colors.white)),
             content: const Text(
               "Are you sure you want to logout?",
               style: TextStyle(color: Colors.white54),

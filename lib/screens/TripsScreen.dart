@@ -2,6 +2,7 @@ import 'package:bikeservice/screens/ProfileScreen.dart';
 import 'package:bikeservice/screens/fuel.dart';
 import 'package:bikeservice/screens/home.dart';
 import 'package:bikeservice/screens/service.dart';
+import 'package:bikeservice/screens/shimmer/TripsShimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -56,7 +57,7 @@ class _TripsScreenState extends State<TripsScreen> {
 
   Future<void> loadTrips() async {
     try {
-      if (mounted) setState(() => loading = true);
+      if (!mounted) setState(() => loading = true);
 
       final bike = await getBike();
 
@@ -88,9 +89,9 @@ class _TripsScreenState extends State<TripsScreen> {
       if (!mounted) return;
       setState(() => loading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Trip Load Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Trip Load Error: $e")));
     }
   }
 
@@ -101,9 +102,7 @@ class _TripsScreenState extends State<TripsScreen> {
     if (selectedTab == 1) {
       result = result.where((trip) {
         final date = DateTime.tryParse(trip['trip_date']?.toString() ?? "");
-        return date != null &&
-            date.month == now.month &&
-            date.year == now.year;
+        return date != null && date.month == now.month && date.year == now.year;
       }).toList();
     }
 
@@ -149,17 +148,17 @@ class _TripsScreenState extends State<TripsScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Trip deleted")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Trip deleted")));
 
       await loadTrips();
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Delete Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Delete Error: $e")));
     }
   }
 
@@ -168,8 +167,18 @@ class _TripsScreenState extends State<TripsScreen> {
     if (d == null) return date;
 
     const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
 
     return "${d.day} ${months[d.month - 1]} ${d.year}";
@@ -272,8 +281,7 @@ class _TripsScreenState extends State<TripsScreen> {
                       double.tryParse(distanceController.text.trim()) ?? 0,
                   'duration_min':
                       int.tryParse(durationController.text.trim()) ?? 0,
-                  'fuel_used':
-                      double.tryParse(fuelController.text.trim()) ?? 0,
+                  'fuel_used': double.tryParse(fuelController.text.trim()) ?? 0,
                   'notes': notesController.text.trim(),
                 });
 
@@ -286,9 +294,9 @@ class _TripsScreenState extends State<TripsScreen> {
               } catch (e) {
                 if (context.mounted) {
                   setModalState(() => isLoading = false);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Save Error: $e")),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text("Save Error: $e")));
                 }
               }
             }
@@ -336,8 +344,9 @@ class _TripsScreenState extends State<TripsScreen> {
                         );
 
                         if (picked != null) {
-                          dateController.text =
-                              picked.toIso8601String().split('T')[0];
+                          dateController.text = picked.toIso8601String().split(
+                            'T',
+                          )[0];
                         }
                       },
                     ),
@@ -352,8 +361,9 @@ class _TripsScreenState extends State<TripsScreen> {
                       controller: distanceController,
                       label: "Distance KM",
                       icon: Icons.speed,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     tripField(
@@ -367,8 +377,9 @@ class _TripsScreenState extends State<TripsScreen> {
                       controller: fuelController,
                       label: "Fuel Used Liter",
                       icon: Icons.local_gas_station,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     tripField(
@@ -416,13 +427,6 @@ class _TripsScreenState extends State<TripsScreen> {
       },
     );
 
-    titleController.dispose();
-    distanceController.dispose();
-    durationController.dispose();
-    fuelController.dispose();
-    notesController.dispose();
-    dateController.dispose();
-
     if (result == true) {
       await loadTrips();
     }
@@ -439,7 +443,7 @@ class _TripsScreenState extends State<TripsScreen> {
           "Trip Analytics",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-      //  leading: const BackButton(color: Colors.white),
+        //  leading: const BackButton(color: Colors.white),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: selectedIndex,
@@ -466,7 +470,7 @@ class _TripsScreenState extends State<TripsScreen> {
         onPressed: showAddTripDialog,
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const TripsShimmer()
           : RefreshIndicator(
               onRefresh: loadTrips,
               color: primary,
@@ -502,10 +506,7 @@ class _TripsScreenState extends State<TripsScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            primary.withOpacity(.95),
-            const Color(0xFF7C2D12),
-          ],
+          colors: [primary.withOpacity(.95), const Color(0xFF7C2D12)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -623,14 +624,30 @@ class _TripsScreenState extends State<TripsScreen> {
       mainAxisSpacing: 12,
       childAspectRatio: 1.15,
       children: [
-        statCard("Duration", formatDuration(totalDuration), Icons.timer,
-            Colors.orange),
-        statCard("Fuel Used", "${totalFuel.toStringAsFixed(1)} L",
-            Icons.local_gas_station, Colors.green),
-        statCard("Mileage", "${avgMileage.toStringAsFixed(1)} km/L",
-            Icons.speed, Colors.cyan),
-        statCard("Trips", "${filteredTrips.length}", Icons.two_wheeler,
-            Colors.purpleAccent),
+        statCard(
+          "Duration",
+          formatDuration(totalDuration),
+          Icons.timer,
+          Colors.orange,
+        ),
+        statCard(
+          "Fuel Used",
+          "${totalFuel.toStringAsFixed(1)} L",
+          Icons.local_gas_station,
+          Colors.green,
+        ),
+        statCard(
+          "Mileage",
+          "${avgMileage.toStringAsFixed(1)} km/L",
+          Icons.speed,
+          Colors.cyan,
+        ),
+        statCard(
+          "Trips",
+          "${filteredTrips.length}",
+          Icons.two_wheeler,
+          Colors.purpleAccent,
+        ),
       ],
     );
   }
@@ -677,11 +694,7 @@ class _TripsScreenState extends State<TripsScreen> {
       ),
       child: Stack(
         children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: MapPatternPainter(),
-            ),
-          ),
+          Positioned.fill(child: CustomPaint(painter: MapPatternPainter())),
           Positioned(
             left: 20,
             top: 20,
@@ -783,16 +796,16 @@ class _TripsScreenState extends State<TripsScreen> {
         final title = trip['title']?.toString() ?? "Trip";
         final notes = trip['notes']?.toString() ?? "";
 
-        final distanceValue =
-            (trip['distance_km'] as num?)?.toDouble() ?? 0;
+        final distanceValue = (trip['distance_km'] as num?)?.toDouble() ?? 0;
         final fuelValue = (trip['fuel_used'] as num?)?.toDouble() ?? 0;
         final durationValue = (trip['duration_min'] as num?)?.toInt() ?? 0;
 
         final distance = "${distanceValue.toStringAsFixed(1)} km";
         final duration = formatDuration(durationValue);
         final fuel = "${fuelValue.toStringAsFixed(1)} L";
-        final mileage =
-            fuelValue > 0 ? "${(distanceValue / fuelValue).toStringAsFixed(1)} km/L" : "--";
+        final mileage = fuelValue > 0
+            ? "${(distanceValue / fuelValue).toStringAsFixed(1)} km/L"
+            : "--";
 
         return Dismissible(
           key: ValueKey(tripId),

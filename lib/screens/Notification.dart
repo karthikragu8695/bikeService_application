@@ -1,3 +1,4 @@
+import 'package:bikeservice/screens/shimmer/NotificationShimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -165,7 +166,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ],
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const NotificationShimmer()
           : RefreshIndicator(
               onRefresh: loadNotifications,
               color: primary,

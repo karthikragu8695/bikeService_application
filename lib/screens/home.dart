@@ -3,6 +3,7 @@ import 'package:bikeservice/screens/ProfileScreen.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
 import 'package:bikeservice/screens/fuel.dart';
 import 'package:bikeservice/screens/service.dart';
+import 'package:bikeservice/screens/shimmer/HomeShimmer.dart';
 import 'package:bikeservice/widget/Addfuel.dart' show showAddFuelDialog;
 import 'package:bikeservice/widget/Addservice.dart';
 import 'package:flutter/material.dart';
@@ -330,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const HomeShimmer()
           : SafeArea(
               child: RefreshIndicator(
                 onRefresh: loadHomeData,

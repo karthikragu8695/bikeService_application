@@ -122,71 +122,57 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   }
 
   Future<void> signup() async {
-    if (!validateForm()) return;
+  if (!validateForm()) return;
 
-    try {
+  try {
+    if (mounted) {
       setState(() => loading = true);
+    }
 
-      final email = emailController.text.trim();
-      final password = passwordController.text.trim();
-      final name = nameController.text.trim();
-      final phone = phoneController.text.trim();
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+    final name = nameController.text.trim();
+    final phone = phoneController.text.trim();
 
-      final res = await supabase.auth.signUp(email: email, password: password);
+    final res = await supabase.auth.signUp(
+      email: email,
+      password: password,
+    );
 
-      final user = res.user;
+    final user = res.user;
 
-      if (user != null) {
-        await supabase.from('profiles').upsert({
-          'id': user.id,
-          'username': name,
-        });
+    if (user != null) {
+      await supabase.from('users').upsert({
+        'id': user.id,
+        'name': name,
+        'phone': phone,
+        'email': email,
+      });
+    }
 
-        await supabase.from('users').upsert({
-          'id': user.id,
-          'name': name,
-          'phone': phone,
-          'email': email,
-        });
-      }
+    if (!mounted) return;
 
-      if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Account created successfully. Please login."),
+      ),
+    );
 
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text(
-            "Account Created",
-            style: TextStyle(color: Colors.white),
-          ),
-          content: const Text(
-            "Your account has been created successfully. Please login to continue.",
-            style: TextStyle(color: Colors.white54),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
-              },
-              child: const Text("Login", style: TextStyle(color: primary)),
-            ),
-          ],
-        ),
-      );
-    } on AuthException catch (e) {
+    Navigator.pop(context); // Back to Login Screen
+  } on AuthException catch (e) {
+    if (mounted) {
       showMessage(e.message);
-    } catch (e) {
+    }
+  } catch (e) {
+    if (mounted) {
       showMessage("Signup Error: $e");
-    } finally {
-      if (mounted) setState(() => loading = false);
+    }
+  } finally {
+    if (mounted) {
+      setState(() => loading = false);
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {

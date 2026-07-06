@@ -2,6 +2,7 @@ import 'package:bikeservice/screens/ProfileScreen.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
 import 'package:bikeservice/screens/home.dart';
 import 'package:bikeservice/screens/service.dart';
+import 'package:bikeservice/screens/shimmer/FuelShimmer.dart';
 import 'package:bikeservice/widget/Addfuel.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ class _FuelScreenState extends State<FuelScreen> {
 
   static const primary = Color(0xFFFF5A1F);
   static const tankCapacity = 13.0;
+  
 
   @override
   void initState() {
@@ -48,6 +50,28 @@ class _FuelScreenState extends State<FuelScreen> {
 
     return bike;
   }
+  Future<void> deleteFuel(String id) async {
+  try {
+    await supabase
+        .from('fuel_entries')
+        .delete()
+        .eq('id', id);
+
+    await loadFuelHistory();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Fuel entry deleted successfully")),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Delete failed: $e")),
+    );
+  }
+}
 
   Future<void> loadFuelHistory() async {
     try {
@@ -278,7 +302,7 @@ class _FuelScreenState extends State<FuelScreen> {
         },
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const FuelShimmer()
           : RefreshIndicator(
               onRefresh: loadFuelHistory,
               color: primary,
@@ -537,12 +561,14 @@ class _FuelScreenState extends State<FuelScreen> {
 
   Widget fuelHistoryList() {
     if (fuelList.isEmpty) {
-      return Container(
+      return 
+      Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: const Color(0xFF111827),
           borderRadius: BorderRadius.circular(16),
+          
         ),
         child: const Center(
           child: Text(
@@ -577,65 +603,111 @@ class _FuelScreenState extends State<FuelScreen> {
             ? "--"
             : "${mileageValue.toStringAsFixed(1)} km/L";
 
-        return fuelHistoryTile(date, liters, amount, mileage);
-      },
-    );
-  }
+        return Dismissible(
+  key: ValueKey(fuel['id']),
+  direction: DismissDirection.endToStart,
 
-  Widget fuelHistoryTile(
-    String date,
-    String liters,
-    String amount,
-    String mileage,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 55,
-            height: 55,
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                date,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
+  confirmDismiss: (_) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Fuel Entry"),
+        content: const Text(
+          "Are you sure you want to delete this fuel entry?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Text(
-              liters,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              amount,
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              mileage,
-              textAlign: TextAlign.end,
-              style: const TextStyle(color: Colors.white54),
+          ElevatedButton(
+            
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              "Delete",
             ),
           ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      await deleteFuel(fuel['id'].toString());
+      return true;
+    }
+
+    return false;
+  },
+
+  background: Container(
+    alignment: Alignment.centerRight,
+    padding: const EdgeInsets.only(right: 20),
+    decoration: BoxDecoration(
+      color: Colors.red,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: const Icon(Icons.delete, color: Colors.white),
+  ),
+
+  child: Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFF111827),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 55,
+          height: 55,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              date,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 15),
+
+        Expanded(
+          child: Text(
+            liters,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+
+        Expanded(
+          child: Text(
+            amount,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+
+        Expanded(
+          child: Text(
+            mileage,
+            textAlign: TextAlign.end,
+            style: const TextStyle(color: Colors.white54),
+          ),
+        ),
+      ],
+    ),
+  ),
+);
+      },
+    );
   }
+
+  
 }

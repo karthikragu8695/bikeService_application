@@ -2,6 +2,7 @@ import 'package:bikeservice/screens/ProfileScreen.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
 import 'package:bikeservice/screens/fuel.dart';
 import 'package:bikeservice/screens/home.dart';
+import 'package:bikeservice/screens/shimmer/ServiceShimmer.dart';
 import 'package:bikeservice/widget/Addservice.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -269,7 +270,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
         },
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const ServiceShimmer()
           : RefreshIndicator(
               onRefresh: loadServices,
               color: primary,
