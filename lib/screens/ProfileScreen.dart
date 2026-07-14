@@ -2,17 +2,16 @@ import 'package:bikeservice/screens/AboutUsScreen.dart';
 import 'package:bikeservice/screens/HelpSupportScreen%20.dart';
 import 'package:bikeservice/screens/Notification.dart';
 import 'package:bikeservice/screens/TripsScreen.dart';
+import 'package:bikeservice/screens/bikedocument.dart';
 import 'package:bikeservice/screens/fuel.dart';
 import 'package:bikeservice/screens/home.dart';
 import 'package:bikeservice/screens/login.dart';
 import 'package:bikeservice/screens/service.dart';
 import 'package:bikeservice/screens/shimmer/ProfileShimmer.dart';
-import 'package:bikeservice/screens/theme_provider.dart';
 import 'package:bikeservice/screens/userProfile.dart';
 import 'package:bikeservice/widget/bikeDetail.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:provider/provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -254,7 +253,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         );
                       });
                     }),
-                    themeTile(),
+                    profileTile(Icons.document_scanner_outlined, "Document Wallet", () {
+                      setState(() {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => const Bikedocument(),
+                          ),
+                        );
+                      });
+                    }),
                     profileTile(Icons.help_outline, "Help & Support", () {
                       setState(() {
                         Navigator.push(
@@ -479,25 +487,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.palette_outlined, color: Colors.white),
+          const Icon(Icons.document_scanner_outlined, color: Colors.white),
           const SizedBox(width: 15),
           const Expanded(
             child: Text(
-              "Dark Mode",
+              "Document wallet",
               style: TextStyle(color: Colors.white, fontSize: 15),
             ),
           ),
-          Switch(
-            activeThumbColor: primary,
-            value: Provider.of<ThemeProvider>(context).isDark,
-            onChanged: (value) {
-              Provider.of<ThemeProvider>(
-                context,
-                listen: false,
-              ).toggleTheme(value);
-            },
-          ),
+          const Icon(Icons.chevron_right, color: Colors.white54),
         ],
+        
       ),
     );
   }

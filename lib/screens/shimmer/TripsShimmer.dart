@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -65,7 +64,7 @@ class TripsShimmer extends StatelessWidget {
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
-              itemBuilder: (_, __) => box(height: 120, radius: 18),
+              itemBuilder: (_, _) => box(height: 120, radius: 18),
             ),
 
             const SizedBox(height: 20),
