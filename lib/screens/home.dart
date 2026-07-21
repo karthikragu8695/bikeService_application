@@ -36,6 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
   int tripsCount = 0;
 
   List<dynamic> recentServices = [];
+  double remainingFuelLitres = 0;
+  static const double tankCapacity = 13.0;
+
+  static const double defaultMileage = 45.0;
 
   @override
   void initState() {
@@ -45,19 +49,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> loadHomeData() async {
     try {
-      if (mounted) setState(() => loading = true);
+      if (mounted) {
+        setState(() => loading = true);
+      }
 
       await getUserData();
       await getBike();
-      await getFuelSummary();
+
       await getMileage();
+
+      await getFuelSummary();
+
       await getServiceDue();
       await getTripsSummary();
       await getRecentServices();
 
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     } catch (e) {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
+
       debugPrint("Home Load Error: $e");
     }
   }
@@ -101,42 +115,123 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> getFuelSummary() async {
-    final bike = bikeData ?? await getUserBike();
-    if (bike == null) return;
+    try {
+      final bike = bikeData ?? await getUserBike();
 
-    final fuelList = await supabase
-        .from('fuel_entries')
-        .select('liters, amount, fuel_date')
-        .eq('bike_id', bike['id'])
-        .order('fuel_date', ascending: false);
+      if (bike == null) {
+        if (!mounted) return;
 
-    const tankCapacity = 13.0;
+        setState(() {
+          fuelLevelPercent = 0;
+          remainingFuelLitres = 0;
+          monthlyFuelCost = 0;
+        });
 
-    double latestLiters = 0;
-    double monthCost = 0;
-    final now = DateTime.now();
-
-    if (fuelList.isNotEmpty) {
-      latestLiters = (fuelList.first['liters'] as num?)?.toDouble() ?? 0;
-    }
-
-    for (final fuel in fuelList) {
-      final date = DateTime.tryParse(fuel['fuel_date']?.toString() ?? "");
-      final amount = (fuel['amount'] as num?)?.toDouble() ?? 0;
-
-      if (date != null && date.month == now.month && date.year == now.year) {
-        monthCost += amount;
+        return;
       }
+
+      final fuelList = await supabase
+          .from('fuel_entries')
+          .select('liters, amount, fuel_date, odometer')
+          .eq('bike_id', bike['id'])
+          .order('fuel_date', ascending: false);
+
+      if (fuelList.isEmpty) {
+        if (!mounted) return;
+
+        setState(() {
+          fuelLevelPercent = 0;
+          remainingFuelLitres = 0;
+          monthlyFuelCost = 0;
+        });
+
+        return;
+      }
+
+      double monthCost = 0;
+      final now = DateTime.now();
+
+      // இந்த மாத fuel expense calculate செய்கிறது.
+      for (final fuel in fuelList) {
+        final fuelDate = DateTime.tryParse(fuel['fuel_date']?.toString() ?? '');
+
+        final amount = (fuel['amount'] as num?)?.toDouble() ?? 0;
+
+        if (fuelDate != null &&
+            fuelDate.month == now.month &&
+            fuelDate.year == now.year) {
+          monthCost += amount;
+        }
+      }
+
+      // Latest fuel entry.
+      final latestFuel = fuelList.first;
+
+      final addedLitres = (latestFuel['liters'] as num?)?.toDouble() ?? 0;
+
+      final lastFuelOdometer =
+          (latestFuel['odometer'] as num?)?.toDouble() ?? 0;
+
+      // Bike current kilometre.
+      final currentKm =
+          (bike['current_km'] as num?)?.toDouble() ?? lastFuelOdometer;
+
+      double travelledKm = currentKm - lastFuelOdometer;
+
+      // Negative distance வரக்கூடாது.
+      if (travelledKm < 0) {
+        travelledKm = 0;
+      }
+
+      // getMileage() மூலம் mileage கிடைக்கவில்லை என்றால்
+      // defaultMileage பயன்படுத்தப்படும்.
+      final usableMileage = mileage > 0 ? mileage : defaultMileage;
+
+      // எவ்வளவு fuel consume ஆகியிருக்கும்?
+      final consumedFuel = usableMileage > 0 ? travelledKm / usableMileage : 0;
+
+      // Remaining fuel.
+      double calculatedRemainingFuel = addedLitres - consumedFuel;
+
+      // 0 litres-க்கு கீழே போகக்கூடாது.
+      calculatedRemainingFuel = calculatedRemainingFuel.clamp(
+        0.0,
+        tankCapacity,
+      );
+
+      // Percentage calculation.
+      final calculatedPercentage =
+          (calculatedRemainingFuel / tankCapacity) * 100;
+
+      if (!mounted) return;
+
+      setState(() {
+        remainingFuelLitres = calculatedRemainingFuel;
+
+        fuelLevelPercent = calculatedPercentage.clamp(0.0, 100.0).toDouble();
+
+        monthlyFuelCost = monthCost;
+      });
+
+      debugPrint('Latest fuel added: $addedLitres L');
+      debugPrint('Last fuel odometer: $lastFuelOdometer km');
+      debugPrint('Current bike km: $currentKm km');
+      debugPrint('Travelled distance: $travelledKm km');
+      debugPrint('Used mileage: $usableMileage km/L');
+      debugPrint('Consumed fuel: $consumedFuel L');
+      debugPrint('Remaining fuel: $remainingFuelLitres L');
+      debugPrint('Fuel percentage: $fuelLevelPercent%');
+    } catch (e) {
+      debugPrint('Fuel summary error: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        fuelLevelPercent = 0;
+        remainingFuelLitres = 0;
+        monthlyFuelCost = 0;
+      });
     }
-
-    if (!mounted) return;
-
-    setState(() {
-      fuelLevelPercent = ((latestLiters / tankCapacity) * 100)
-          .clamp(0, 100)
-          .toDouble();
-      monthlyFuelCost = monthCost;
-    });
   }
 
   Future<void> getMileage() async {
@@ -239,12 +334,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> refreshAfterFuelAdded() async {
-    await getBike();
-    await getFuelSummary();
-    await getMileage();
-    await getServiceDue();
-  }
+ Future<void> refreshAfterFuelAdded() async {
+  await getBike();
+  await getMileage();
+  await getFuelSummary();
+  await getServiceDue();
+}
 
   Future<void> refreshAfterServiceAdded() async {
     await getRecentServices();
@@ -416,7 +511,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
-                child: const Text('2',style: TextStyle(color: Colors.white,fontSize: 10,fontWeight: FontWeight.bold),),
+                child: const Text(
+                  '2',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -607,9 +709,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  "Based on your latest fuel entry",
-                  style: TextStyle(color: Colors.white54),
+                Text(
+                  "${remainingFuelLitres.toStringAsFixed(1)} L remaining",
+                  style: const TextStyle(color: Colors.white54, fontSize: 14),
                 ),
                 const SizedBox(height: 10),
                 LinearProgressIndicator(
